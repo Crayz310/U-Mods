@@ -1,4 +1,4 @@
-__version__ = (1, 0, 5)
+__version__ = (1, 0, 6)
 
 """
   __  ___  _____  ____________  ______ ___ 
@@ -25,6 +25,7 @@ import typing
 from urllib.parse import urlparse, parse_qs, unquote
 import asyncio
 import logging
+import subprocess
 
 from telethon.tl.types import Message
 
@@ -36,19 +37,20 @@ logger = logging.getLogger(__name__)
 class HHFarmMod(loader.Module):
   strings = {
     "name": "HHFarm",
-    "activated": "<blockquote><emoji document_id=5316561083085895267>✅</emoji> <b>Module activated</b></blockquote>",
-    "deactivated": "<blockquote><emoji document_id=5388785832956016892>❌</emoji>  <b>Module deactivated</b></blockquote>"
+    "activated": "<emoji document_id=5316561083085895267>✅</emoji> <b>Module activated</b>",
+    "deactivated": "<emoji document_id=5388785832956016892>❌</emoji>  <b>Module deactivated</b>",
+    "post_install": "<emoji document_id=5879785854284599288>ℹ️</emoji> <b>This module requires</b> <code>tesseract-ocr</code>\n\n<emoji document_id=6024106569430472546>📦</emoji><b>Installation command:</b> <code>apt install tesseract-ocr -y</code>"
   }
 
   strings_ru = {
-    "activated": "<blockquote><emoji document_id=5316561083085895267>✅</emoji> <b>Модуль активирован</b></blockquote>",
-    "deactivated": "<blockquote><emoji document_id=5388785832956016892>❌</emoji>  <b>Модуль деактивирован</b></blockquote>"
+    "activated": "<emoji document_id=5316561083085895267>✅</emoji> <b>Модуль активирован</b>",
+    "deactivated": "<emoji document_id=5388785832956016892>❌</emoji>  <b>Модуль деактивирован</b>",
+    "post_install": "<emoji document_id=5879785854284599288>ℹ️</emoji> <b>Для работы данного модуля требуется</b> <code>tesseract-ocr</code>\n\n<emoji document_id=6024106569430472546>📦</emoji><b>Команда для установки:</b> <code>apt install tesseract-ocr -y</code>"
   }
 
   async def client_ready(self, client, db):
     self._client = client
     self._db = db
-    self.status = self.get('status', False)
 
   def _enhance_image(self, image_bytes: bytes) -> bytes:
     """
@@ -195,9 +197,13 @@ class HHFarmMod(loader.Module):
         
         await conv.send_message(str(result))
 
-        bot_resp = await conv.get_response()
-
-        await conv.mark_read(bot_resp)
+        try:
+          bot_resp = await asyncio.wait_for(conv.get_response(), timeout=5)
+          await conv.mark_read(bot_resp)
+        except asyncio.TimeoutError:
+          await conv.send_message(str(result))
+          bot_resp = await conv.get_response()
+          await conv.mark_read(bot_resp)
 
         return True
     except Exception:
@@ -206,6 +212,12 @@ class HHFarmMod(loader.Module):
 
   @loader.command(en_doc="- Activate/Deactivate module", ru_doc="- Активировать/Деактивировать модуль")
   async def hhfarm(self, message: Message):
+    try:
+      subprocess.run(['tesseract', '--version'], check=True)
+    except (subprocess.CalledProcessError, FileNotFoundError):
+      await utils.answer(message, self.strings("post_install"))
+      return
+    
     self.set('status', not self.get('status', False))
 
     await utils.answer(message, self.strings(("activated" if self.get('status', False) else "deactivated")))
